@@ -1,0 +1,324 @@
+openapi: 3.0.3
+info:
+  title: Task API
+  version: 1.1.0
+  description: |
+    Task API with JWT authentication and optional task status filtering.
+    Use POST /api/auth/signup and POST /api/auth/login to get a token,
+    then click Authorize and paste the token into the Bearer field.
+servers:
+  - url: /
+    description: Current API server
+
+tags:
+  - name: Authentication
+  - name: Tasks
+  - name: Admin
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        title:
+          type: string
+          example: Finish homework
+        completed:
+          type: boolean
+          example: false
+        userId:
+          type: integer
+          example: 1
+    TaskInput:
+      type: object
+      required: [title, completed]
+      properties:
+        title:
+          type: string
+          minLength: 5
+          example: Finish homework
+        completed:
+          type: boolean
+          example: false
+    TaskUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 5
+        completed:
+          type: boolean
+    Error:
+      type: object
+      properties:
+        errors:
+          description: Error message or an array of validation messages
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+  parameters:
+    completed:
+      name: completed
+      in: query
+      required: false
+      description: |
+        Filter tasks by completion status. Use `true` to retrieve only completed
+        tasks or `false` to retrieve only incomplete tasks. Leave it blank to
+        retrieve all tasks. Anything other than `true` or `false` returns 400.
+      schema:
+        type: string
+        enum: ['true', 'false']
+      examples:
+        completed:
+          value: 'true'
+          summary: Completed tasks
+        incomplete:
+          value: 'false'
+          summary: Incomplete tasks
+  responses:
+    BadCompleted:
+      description: Invalid completed query parameter (400 Bad Request)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            errors: ['completed must be true or false']
+    Unauthorized:
+      description: Missing or invalid Bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Access to this task is forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Task was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+paths:
+  /api/auth/signup:
+    post:
+      tags: [Authentication]
+      summary: Sign up
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '201':
+          description: User created
+        '400':
+          description: Invalid signup details
+        '409':
+          description: Email already in use
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Log in and get a JWT token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login succeeded
+        '401':
+          description: Invalid credentials
+  /api/tasks:
+    get:
+      tags: [Tasks]
+      summary: List my tasks (with optional completed filter)
+      description: |
+        Returns tasks owned by the logged-in user.
+        GET /api/tasks returns all tasks; ?completed=true returns only completed
+        tasks; ?completed=false returns only incomplete tasks;
+        ?completed=invalid returns HTTP 400.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/completed'
+      responses:
+        '200':
+          description: A list of tasks belonging to this user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadCompleted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Tasks]
+      summary: Create a new task for the logged-in user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskInput'
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          description: Invalid task data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /tasks:
+    get:
+      tags: [Tasks]
+      summary: List my tasks (short URL; same as /api/tasks)
+      description: Same authenticated filtering behavior as GET /api/tasks.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/completed'
+      responses:
+        '200':
+          description: A list of tasks belonging to this user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadCompleted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tasks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    get:
+      tags: [Tasks]
+      summary: Get an owned task
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Task found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Tasks]
+      summary: Update an owned task
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          description: Invalid task data
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Tasks]
+      summary: Delete an owned task
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Task deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/admin/tasks:
+    get:
+      tags: [Admin]
+      summary: List all users' tasks (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/completed'
+      responses:
+        '200':
+          description: A list of all tasks, optionally filtered by completion status
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadCompleted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
